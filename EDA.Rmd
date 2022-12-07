@@ -1,0 +1,21 @@
+---
+title: "Jenny_EDA"
+output: html_document
+date: ""
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r load-packages, message=FALSE}
+library(tidyverse)
+library(broom)
+library(patchwork)
+```
+
+```{r data}
+raw_data <- read_csv("comma-survey.csv")
+```
