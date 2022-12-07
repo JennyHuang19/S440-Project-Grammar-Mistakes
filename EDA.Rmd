@@ -17,5 +17,73 @@ library(patchwork)
 ```
 
 ```{r data}
-raw_data <- read_csv("comma-survey.csv")
+df_1 <- read_csv("comma-survey.csv")
+# df_1
+colnames(df_1)
+
+colSums(is.na(df_1)) # how did we deal with these before?
 ```
+
+# Introduction
+## Background
+
+The importance of the use of the Oxford comma. (to make sentences less ambiguous)
+-times when the lack of an Oxford comma failed us: 2018 Dairy Farmer and Maine.
+-arguments against the use of the Oxford comma.
+
+## Dataset Description and Variables of Interest
+## Research Question
+## EDA
+# Methodology
+## Model Selection
+## Model Specification
+## Model Diagnostics
+# Results
+# Discussion
+## Investigative Conclusions
+## Limitations and Future Work
+- It's not a matter of grammar; it's a matter of clarity - Perlman. Would be
+interesting to have data on whether people know the reasoning behind the Oxford comma.
+
+# Summary
+
+```{r}
+### rename column names.
+df_2 <- df_1 %>% 
+  rename(comma_usage = "In your opinion, which sentence is more gramatically correct?",
+         heard_comma = "Prior to reading about it above, had you heard of the serial (or Oxford) comma?",
+         care_comma = "How much, if at all, do you care about the use (or lack thereof) of the serial (or Oxford) comma in grammar?",
+         plural_usage = "How would you write the following sentence?",
+         consider_plural = "When faced with using the word \"data\", have you ever spent time considering if the word was a singular or plural noun?",
+         debate_plural = "How much, if at all, do you care about the debate over the use of the word \"data\" as a singluar or plural noun?",
+         Grammar_isImportant = "In your opinion, how important or unimportant is proper use of grammar?"
+         )
+```
+
+### Look at contingency table
+```{r}
+# create plots of 
+df_2 %>% 
+  group_by(comma_usage, care_comma) %>% 
+  summarize(n=n())%>%
+  mutate(proportion=n/sum(n))
+
+df_2 %>% 
+  group_by(comma_usage, heard_comma) %>% 
+  summarize(n=n())%>%
+  mutate(proportion=n/sum(n))
+
+df_2 %>% 
+  group_by(comma_usage, Grammar_isImportant) %>% 
+  summarize(n=n())%>%
+  mutate(proportion=n/sum(n))
+```
+Interestingly, among the people who have heard of the Oxford comma, 47.54% of these people chose not to use it. Even more interesting, among the people who self-reported "caring a lot" about the Oxford comma, 13.73% chose not to use it. Finally, among the people who thought that grammar was "Very Important", 62% did not use the Oxford comma.
+
+
+# Research Hypothesis:
+(cstudy1)
+Control for the demographic features that are associated with use of the Oxford comma? (perhaps use a mixed effects model for different U.S. regions and justify using the 538 article.)
+What region of the U.S. cares the most about Oxford comma?
+Is the belief that grammar is important (variables: debate, consider, care), associated with correct usage?
+
