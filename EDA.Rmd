@@ -13,6 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r load-packages, message=FALSE}
 library(tidyverse)
 library(broom)
+library(forcats)
 library(patchwork)
 ```
 
@@ -34,11 +35,16 @@ The importance of the use of the Oxford comma. (to make sentences less ambiguous
 ## Dataset Description and Variables of Interest
 ## Research Question
 ## EDA
+
+
 # Methodology
 ## Model Selection
 ## Model Specification
 ## Model Diagnostics
+
+
 # Results
+
 # Discussion
 ## Investigative Conclusions
 ## Limitations and Future Work
@@ -58,32 +64,88 @@ df_2 <- df_1 %>%
          debate_plural = "How much, if at all, do you care about the debate over the use of the word \"data\" as a singluar or plural noun?",
          Grammar_isImportant = "In your opinion, how important or unimportant is proper use of grammar?"
          )
+
+df_3 <- df_2 %>% 
+  mutate(care_comma = fct_relevel(care_comma, 
+            "Not at all","Not much",
+                               "Some",
+                               "A lot")) %>% 
+  mutate(Grammar_isImportant = fct_relevel(Grammar_isImportant, 
+            "Somewhat unimportant",
+            "Neither important nor unimportant (neutral)",
+                               "Somewhat important",
+                               "Very important"))
+
 ```
 
 ### Look at contingency table
 ```{r}
 # create plots of 
-df_2 %>% 
+df_3 %>% 
   group_by(comma_usage, care_comma) %>% 
   summarize(n=n())%>%
   mutate(proportion=n/sum(n))
 
-df_2 %>% 
+df_3 %>% 
   group_by(comma_usage, heard_comma) %>% 
   summarize(n=n())%>%
   mutate(proportion=n/sum(n))
 
-df_2 %>% 
+df_3 %>% 
   group_by(comma_usage, Grammar_isImportant) %>% 
   summarize(n=n())%>%
   mutate(proportion=n/sum(n))
 ```
+
+```{r}
+ggplot(data = df_3) +
+  geom_count(mapping = aes(x=comma_usage, y=care_comma))+ 
+  scale_x_discrete(name ="Oxford Comma", 
+                   labels=c("omitted", 
+                            "used"
+                  ))+
+  labs(x = "Oxford Comma", y = "Care about Comma")+
+  theme_bw()
+
+# Heat map.
+df_3 %>% 
+  count(comma_usage, care_comma) %>%  
+  ggplot(mapping = aes(x = comma_usage, y = care_comma)) +
+    geom_tile(mapping = aes(fill = n)) +
+  scale_x_discrete(name ="Oxford Comma", 
+                   labels=c("omitted", 
+                            "used"
+                  ))+labs(x = "Oxford Comma", y = "Care about Comma")
+
+ggplot(data = df_3) +
+  geom_count(mapping = aes(x=comma_usage, y=Grammar_isImportant))+ 
+  scale_x_discrete(name ="Oxford Comma", 
+                   labels=c("omitted", 
+                            "used"
+                  ))+
+  labs(x = "Oxford Comma", y = "Grammar Is Important")+
+  theme_bw()
+
+# Heat map.
+df_3 %>% 
+  count(comma_usage, Grammar_isImportant) %>%  
+  ggplot(mapping = aes(x = comma_usage, y = Grammar_isImportant)) +
+  geom_tile(mapping = aes(fill = n)) +
+    scale_x_discrete(name ="Oxford Comma", 
+                   labels=c("omitted", 
+                            "used"
+                  ))+
+  labs(x = "Oxford Comma", y = "Grammar Is Important")
+```
+
 Interestingly, among the people who have heard of the Oxford comma, 47.54% of these people chose not to use it. Even more interesting, among the people who self-reported "caring a lot" about the Oxford comma, 13.73% chose not to use it. Finally, among the people who thought that grammar was "Very Important", 62% did not use the Oxford comma.
+
+The distribution between people who omitted and used the comma were very similar.
 
 
 # Research Hypothesis:
 (cstudy1)
 Control for the demographic features that are associated with use of the Oxford comma? (perhaps use a mixed effects model for different U.S. regions and justify using the 538 article.)
-What region of the U.S. cares the most about Oxford comma?
+
 Is the belief that grammar is important (variables: debate, consider, care), associated with correct usage?
 
