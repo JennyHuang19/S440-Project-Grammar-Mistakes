@@ -1,0 +1,536 @@
+---
+title: "STA440: Debating Grammar Rules"
+output:
+  pdf_document: default
+  html_document: default
+  name: "Jenny Huang"
+date: "2022-12-10"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load-packages, message=FALSE, include=FALSE}
+library(tidyverse)
+library(broom)
+library(forcats)
+library(naniar)
+library(mice)
+library(patchwork)
+library(knitr)
+```
+
+# Introduction
+
+## Background
+
+Why should you care about the Oxford comma debate? The Oxford comma, aka the serial comma, is a comma placed between the last two items in a list of three or more. In law, where clarity is key, the use of this comma is essential for avoiding ambiguity, which may lead to serious consequences [1]. In one famous lawsuit, the absence of such a comma cost a Maine dairy company $5 million [2]. While many standard writing styles, including the Chicago style requires the use of such a comma, the Associated Press stylebook, which many writers and journalists commonly use, does not require it [4]. On Thesaurus.com, one can find a list of amusing real-life examples that illustrate what can go wrong when writers omit the Oxford comma. Some of these include, "Sally enjoys cooking, her family and her dog," "We went caroling with our kids, grandma and grandpa," and "Harry is an employee, a husband and father to three school-aged children" [6].
+
+Recently, FiveThirtyEight ran a poll asking Americans which sentence was more grammatically sound: “It’s important for a person to be honest, kind and loyal.” Or: “It’s important for a person to be honest, kind, and loyal” [8].
+
+They found that a mere 57\% of individuals were pro-Oxford comma while 43 percent were opponents.
+
+The poll then asked respondents an arguably less controversial question: is the word "data" singular or plural? According to respected sources, such as Britannica and Oxford dictionary, the word "data" is the plural form of the word "datum" [4] [5]. Despite this fact, when asked to choose between "Some experts say it's important to drink milk, but the data are inconclusive" and "Some experts say it's important to drink milk, but the data is inconclusive," 79\% of respondents actually chose the singular “data is” over 21\% who chose “data are.”
+
+## Dataset Description and Variables of Interest
+
+In addition to testing out the respondents' grammar preferences through concrete examples, the Fivethirtyeight survey asked respondents a series of questions to gauge their self-rated interest and opinions in such grammar debates. These questions included:
+
+(1) Have you heard of the serial (or Oxford) comma? 
+(2) How much do you care about the use of the Oxford comma? 
+(3) Have you ever spent time considering if the word "data" was a singular or plural noun?
+(4) How much do you care about the debate over the use of the word "data" as singular or plural?
+(5) How important or unimportant is proper use of grammar?
+
+In addition, the data contain demographic factors, including an individual's gender, age, income, and geographic location.
+
+## Research Question
+
+This project is concerned with investigating whether an individual's opinions about grammar (measured using survey questions) and exposure to correct grammar usage (education-level) are associated with correct grammar usage.
+
+```{r data-preprocessing, include=FALSE}
+# read in data.
+df_1 <- read_csv("comma-survey.csv")
+# colnames(df_1)
+
+### rename column names.
+df_2 <- df_1 %>% 
+  rename(comma_usage = "In your opinion, which sentence is more gramatically correct?",
+         heard_comma = "Prior to reading about it above, had you heard of the serial (or Oxford) comma?",
+         care_comma = "How much, if at all, do you care about the use (or lack thereof) of the serial (or Oxford) comma in grammar?",
+         plural_usage = "How would you write the following sentence?",
+         consider_plural = "When faced with using the word \"data\", have you ever spent time considering if the word was a singular or plural noun?",
+         debate_plural = "How much, if at all, do you care about the debate over the use of the word \"data\" as a singluar or plural noun?",
+         Grammar_isImportant = "In your opinion, how important or unimportant is proper use of grammar?"
+         )
+
+df_3 <- df_2 %>% 
+  mutate(care_comma = fct_relevel(care_comma, 
+            "Not at all","Not much",
+                               "Some",
+                               "A lot")) %>% 
+  mutate(Grammar_isImportant = fct_relevel(Grammar_isImportant, 
+            "Somewhat unimportant",
+            "Neither important nor unimportant (neutral)",
+                               "Somewhat important",
+                               "Very important"),
+         Education = fct_relevel(Education, 
+            "Less than high school degree",
+            "High school degree",
+            "Some college or Associate degree",
+            "Bachelor degree",
+            "Graduate degree"),
+         debate_plural = fct_relevel(debate_plural, 
+            "Not at all",
+            "Not much",
+            "Some",
+            "A lot")
+         ) %>% 
+  rename(Household_Income = `Household Income`,
+         Location = `Location (Census Region)`)
+```
+
+```{r echo=FALSE, warning=FALSE}
+# missing data.
+library(naniar)
+vis_miss(df_3) + 
+  labs(subtitle = "Figure 1: missingness of grammar data",
+       font.subtitle = c(10, "plain", "black")) + 
+  theme(axis.text.x = element_text(angle = 90))
+```
+Above is a plot of missingness. The survey answers are mostly complete; however, missingness observations are more common within the demographic variables, such as Household income (25\% missing) and education (9.02\%). Hence, we will impute the missing demographic variables using Mice. Specifically, we use the "logreg" method for binary variables and the "polyreg" method for ordinal variables.
+
+```{r, include=FALSE}
+# https://datascienceplus.com/handling-missing-data-with-mice-package-a-simple-approach/
+# https://stackoverflow.com/questions/48355250/do-imputation-in-r-when-mice-returns-error-that-system-is-computationally-singu
+
+df_3_demographics <- df_3 %>% 
+  select(RespondentID, Gender, Age, Household_Income, Education, Location)
+
+df_3 <- df_3 %>% 
+  mutate(Gender = as.factor(Gender),
+         Age = as.factor(Age),
+         Household_Income = as.factor(Household_Income),
+         Education = as.factor(Education),
+         Location = as.factor(Location))
+
+# set up mice
+init = mice(df_3_demographics, maxit=0) 
+meth = init$method
+predM = init$predictorMatrix
+predM
+meth[c("Gender")]="logreg" 
+meth[c("Age")]="polyreg"
+meth[c("Household_Income")]="polyreg"
+meth[c("Education")]="polyreg"
+meth[c("Location")]="polyreg"
+
+set.seed(12)
+imputed = mice(df_3_demographics, method=meth, predictorMatrix=predM, m=5)
+```
+
+```{r , include=FALSE}
+# check that no NAs remain.
+library(patchwork)
+imputed <- complete(imputed)
+sapply(imputed, function(x) sum(is.na(x)))
+```
+
+```{r, include=FALSE}
+# join imputed demographic variables with the original df.
+df_4 <- inner_join(
+  df_3,
+  imputed,
+  by = "RespondentID",
+  copy = FALSE,
+  suffix = c(".missing", ".imp")
+)
+# drop rows that have NA values for the survey responses.
+df_4 <- df_4 %>% 
+  select(-Gender.missing, 
+         -Age.missing, 
+         -Household_Income.missing, 
+         -Education.missing,
+         -Location.missing) %>% 
+  drop_na() %>% 
+  mutate(comma_correct = if_else(comma_usage == "It's important for a person to be honest, kind, and loyal.", 1, 0),
+         plural_correct = if_else(plural_usage == "Some experts say it's important to drink milk, but the data are inconclusive.", 1, 0),
+         used_comma = if_else(comma_usage == "It's important for a person to be honest, kind, and loyal.", "Used Comma", "Omitted Comma"),
+         plural = if_else(plural_usage == "Some experts say it's important to drink milk, but the data are inconclusive.", "Plural", "Singular"))
+```
+
+```{r, include=FALSE}
+fct_count(df_4$Grammar_isImportant)
+# fct_count(df_4$Location.imp)
+
+Grammar_Important2 <- fct_collapse(df_4$Grammar_isImportant,
+  not_important = c("Neither important nor unimportant (neutral)", 
+                    "Somewhat unimportant",
+                    "Very unimportant"),
+  somewhat_important = "Somewhat important",
+  very_important = "Very important"
+)
+
+df_4 <- df_4 %>% 
+  mutate(Grammar_Important2 = fct_collapse(df_4$Grammar_isImportant,
+  not_important = c("Neither important nor unimportant (neutral)", 
+                    "Somewhat unimportant",
+                    "Very unimportant"),
+  somewhat_important = "Somewhat important",
+  very_important = "Very important"
+))
+```
+
+
+## EDA
+
+### Oxford Comma
+```{r, message = FALSE, warning=FALSE, echo=FALSE, fig.cap="Oxford Comma Use or Omit: Contingency Tables"}
+# create contingency tables to explore oxford comma usage.
+# http://analyticswithr.com/contingencytables.html
+df_4 %>% 
+  group_by(used_comma, care_comma) %>% 
+  summarize(n=n())%>%
+  mutate(proportion=n/sum(n))%>%
+  kable()
+
+df_4 %>% 
+  group_by(used_comma, heard_comma) %>% 
+  summarize(n=n())%>%
+  mutate(proportion=n/sum(n))%>%
+  kable()
+```
+
+```{r, include=FALSE}
+p.aa <- ggplot(data = df_4) +
+  geom_count(mapping = aes(x=comma_usage, y=care_comma))+ 
+  scale_x_discrete(name ="Oxford Comma", 
+                   labels=c("omitted", 
+                            "used"
+                  ))+
+  labs(x = "Oxford Comma", y = "Care about Comma")+
+  theme_bw()
+
+# Heat map.
+p.a <- df_4 %>% 
+  count(comma_usage, care_comma) %>%  
+  ggplot(mapping = aes(x = comma_usage, y = care_comma)) +
+    geom_tile(mapping = aes(fill = n)) +
+  scale_x_discrete(name ="Oxford Comma", 
+                   labels=c("omitted", 
+                            "used"
+                  ))+labs(x = "Oxford Comma", y = "Care about Comma")
+
+p.bb <- ggplot(data = df_4) +
+  geom_count(mapping = aes(x=comma_usage, y=Grammar_isImportant))+ 
+  scale_x_discrete(name ="Oxford Comma", 
+                   labels=c("omitted", 
+                            "used"
+                  ))+
+  labs(x = "Oxford Comma", y = "Grammar Is Important")+
+  theme_bw()
+
+# Heat map.
+p.b <- df_4 %>% 
+  count(comma_usage, Grammar_isImportant) %>%  
+  ggplot(mapping = aes(x = comma_usage, y = Grammar_isImportant)) +
+  geom_tile(mapping = aes(fill = n)) +
+    scale_x_discrete(name ="Oxford Comma", 
+                   labels=c("omitted", 
+                            "used"
+                  ))+
+  labs(x = "Oxford Comma", y = "Grammar Is Important")
+```
+
+Interestingly, among the people who have heard of the Oxford comma, 47.54% of these people chose not to use it. Even more interesting, among the people who self-reported "caring a lot" about the Oxford comma, 13.73% chose not to use it. Finally, among the people who thought that grammar was "Very Important", 62% did not use the Oxford comma. The EDA seem to suggest that the degree to which people cared about grammar is not associated with the usage of the Oxford comma.
+
+### Is the word "Data" Singular or Plural?
+```{r, message = FALSE, warning=FALSE, echo=FALSE, fig.cap="Data Plural or Singular Contingency Tables"}
+# create plots
+df_4 %>% 
+  group_by(plural, debate_plural) %>% 
+  summarize(n=n())%>%
+  mutate(proportion=n/sum(n))%>%
+  kable()
+
+df_4 %>% 
+  group_by(plural, consider_plural) %>% 
+  summarize(n=n())%>%
+  mutate(proportion=n/sum(n))%>%
+  kable()
+```
+
+```{r, include=FALSE}
+p1 <- df_4 %>% 
+  count(plural_usage, consider_plural) %>%  
+  ggplot(mapping = aes(x = plural_usage, y = consider_plural)) +
+  geom_tile(mapping = aes(fill = n)) +
+    scale_x_discrete(name ="Data: Plural or Singular", 
+                   labels=c("singular", 
+                            "plural"))+
+  labs(x = "Plural Usage", y = "Considered singular or plural before.")
+
+# Heat map: how to create a heat map of proportions.
+p2 <- df_4 %>% 
+  count(plural_usage, debate_plural) %>%  
+  ggplot(mapping = aes(x = plural_usage, y = debate_plural)) +
+  geom_tile(mapping = aes(fill = n)) +
+    scale_x_discrete(name ="Data: Plural or Singular", 
+                   labels=c("singular", 
+                            "plural"))+
+  labs(x = "Plural Usage", y = "Care about the debate.")
+```
+
+Individuals who have spent time considering whether the word was singular or plural before tend to characterize it correctly as plural. Individuals who do not care as much about the debate over whether the word is singular or plural tend to characterize it incorrectly as singular.
+
+```{r, include=FALSE}
+# cares about grammar. comma.
+props_comma <- df_4 %>% 
+  group_by(comma_usage, Grammar_Important2) %>% 
+  summarize(n=n())%>%
+  mutate(proportion=n/sum(n))
+
+p.imp1 <- ggplot(props_comma, aes(x=comma_usage, y=proportion, fill=Grammar_Important2)) + geom_col()+
+    scale_x_discrete(name ="Comma", 
+                   labels=c("Omit", 
+                            "Use"))+
+  scale_y_continuous(name ="Proportion")+
+  # theme(axis.text.y=element_blank(),
+  #       axis.ticks.y=element_blank())+
+  labs(x = "Comma Usage", y = "Grammar Is Important")
+
+# cares about grammar. plural.
+props_plural <- df_4 %>% 
+  group_by(plural_usage, Grammar_Important2) %>% 
+  summarize(n=n())%>%
+  mutate(proportion=n/sum(n))
+
+p.imp2 <- ggplot(props_plural, aes(x=plural_usage, y=proportion, fill=Grammar_Important2)) + geom_col()+
+    scale_x_discrete(name ="Data: Plural or Singular", 
+                   labels=c("sing.", 
+                            "plural"))+
+  scale_y_continuous(name ="Proportion")+
+  # theme(axis.text.y=element_blank(),
+  #       axis.ticks.y=element_blank())+
+  labs(x = "Plural Usage", y = "Grammar Is Important", caption = "Figure 2: Both Sides Believe Grammar is Important", font.subtitle = c(10, "plain", "black"))
+```
+
+```{r, message = FALSE, warning=FALSE, echo=FALSE}
+p.imp1 / p.imp2
+```
+
+
+Out of the people who did choose to use the Oxford comma, some believe that grammar is "very unimportant," while among those who did not use the comma, no respondents believe grammar is "very unimportant." It seems that it isn't only "grammar nerds" who are using the comma.
+
+# Methodology
+## Model Selection
+
+We would like to examine whether a person's familiarity and beliefs about the importance of grammar are associated with correct usage of the Oxford comma and correct characterization of the word "data" as plural. Given that the response is binary (correct or incorrect grammar usage), we run a logistic regression model to examine predictors of correct grammar usage that are pertinent to our research question and include demographic characteristics to adjust for potential confounding. 
+In particular, we are interested in a person's education level as well as their responses to these five questions listed in the "Data Description and Variables of Interest" section of this report.
+
+We also control for the variables: gender, age, household income, and location (region of America in which they reside), as it is possible that these demographic characteristics may be associated with grammar usage. 
+
+```{r, include=FALSE, warning=FALSE, results='hide'}
+comma_final <- glm(comma_correct ~ heard_comma + care_comma + Grammar_Important2
+                   + 	Gender.imp + Age.imp + Household_Income.imp + Education.imp + Location.imp,  
+                   family = "binomial",
+                             data = df_4)
+```
+
+
+```{r, include=FALSE, warning=FALSE, results='hide'}
+plural_final <- glm(plural_correct ~ consider_plural + debate_plural + Grammar_Important2
+                   + 	Gender.imp + Age.imp + Household_Income.imp + Education.imp + Location.imp,  
+                   family = "binomial",
+                             data = df_4)
+```
+
+## Model Diagnostics
+
+\subsection{Checking Model Conditions}
+
+**Randomness**
+
+As we have no way of knowing if the 1,055 people surveyed as part of FiveThirtyEight's poll in 2014 is a representative sample of all Americans, so it is possible that randomness is not satisfied. However, there is no reason to believe that this sample would differ from the population of Americans in a significant way, particularly due to the large sample size. Thus, we conclude that the randomness condition is satisfied.
+
+**Independence**
+
+Independence: There is no reason to believe that the survey response of one individual would influence or be influenced by the survey responses of another individual.
+
+**Linearity**
+
+The variables in the model all categorical, so we do not need to assess the empirical logit for these to determine whether the linearity assumption is satisfied.
+
+# Results
+
+The final model is:
+
+$$
+\begin{aligned}
+\log(\pi_{Use}/\pi_{Omit})_i &= \beta_{0} +\beta_{1}(\text{Heard about comma}_{i}) +\beta_{2}(\text{Care about comma}_{i})\\ 
++\beta_{3}(\text{Grammar is Important}_{i})
++\beta_{4}(\text{Gender}_{i}) +\beta_{5}(\text{Age}_{i})\\ 
++\beta_{6}(\text{Household Income}_{i}) +\beta_{7}(\text{Education}_{i}) +\beta_{8}(\text{Location}_{i})
+\end{aligned}
+$$
+ 
+where i refers to each survey respondent, $\beta_{0}$ refers to the baseline log-odds of using the Oxford comma, and $\log(\pi_{Use}/\pi_{Omit})_i$ the log-odds of using the comma for respondent i.
+
+```{r, include=FALSE, warning=FALSE, echo=FALSE}
+tidy(comma_final, conf.int=TRUE) %>%
+  kable(digits=3, caption = "Comma Model Output")
+```
+
+
+```{r, message = FALSE, warning=FALSE, echo=FALSE}
+library(broom)
+library(knitr)
+tidy_comma_final <- tidy(comma_final)
+exp_model_coefs <- as_tibble(exp(tidy_comma_final$estimate))
+conf_int <- confint(comma_final)
+model_conf_int_2.5 <- as_tibble(exp(conf_int))[,1]
+model_conf_int_97.5 <- as_tibble(exp(conf_int))[,2]
+model_variables <- as_tibble(c(names(comma_final$coefficients)))
+model_pvals <- as.data.frame(coef(summary(comma_final))[,4])[,1]
+Variables <- c("Intercept", "Heard of comma (Yes)", "Care about comma (Not Much)", "Care about comma (Some)", "Care about comma (A lot)", "Grammar is important (somewhat important)", "Grammar is important (very important)", "Gender (male)", "Age (18-29)", "Age (30-44)", "Age (45-60)", "Household income ($100,000 - $149,999)", "Household income $150,000+)", "Household income ($25,000 - $49,999)", "Household income ($50,000 - $99,999)", 
+ "Education (High school degree)", "Education (Some college or Associate degree)", "Education (Bachelor degree)", "Education (Graduate degree)", "Location (East South Central)", "Location (Middle Atlantic)",
+ "Location (Mountain)", "Location (New England)", "Location (Pacific)", "Location (South Atlantic)",
+ "Location (West North Central)", "Location (West South Central)")
+model_output_full <- data.frame(Variables, 
+           exp_model_coefs, 
+           model_conf_int_2.5,
+           model_conf_int_97.5, 
+           model_pvals) %>%
+   mutate(model_pvals = if_else(model_pvals < 0.001, 0.000, model_pvals),
+         model_pvals = ceiling(model_pvals*1000)/1000,
+        model_pvals = as.character(model_pvals),
+        model_pvals = if_else(model_pvals == "0", "<0.001", model_pvals)) %>% 
+  kable(digits = 3, col.names = c("Variables", "Estimate", "95% CI Lower Bound", "95% CI Upper Bound", "P-Value (alpha = 0.05)"), caption = "Results of Oxford comma model")
+model_output_full
+```
+ 
+ 
+Among the variables of interest, we find a significant association between Oxford comma usage and the degree to which an individual cares about the Oxford comma. Interestingly, we do not find any significant association between comma usage and whether the individual has ever heard of the Oxford comma, nor the degree to which an individual believes correct grammar usage is important.
+
+Based on our model, we expect the odds of a person using the Oxford comma to be between `r round(exp(1.54317832), 3)` and `r round(exp(2.8530679), 3)` times higher for individuals who care "a lot" about the comma compared to those who care "not at all", with 95% confidence, holding all other variables constant. The degree in which an individual cares about the comma has a much stronger association with comma usage compared to whether a person has simply heard of the comma. Interestingly, we do not find a significant association between comma usage and a person's education level.
+
+Among the variables we controlled for, we saw that an individual's age has significant association with Oxford comma usage. In particular, we expect the odds of a person between 18-29 using the Oxford comma to be between `r round(exp(0.96608427), 3)` and `r round(exp(2.0294702), 3)` times the odds of a person 60+ using the comma, with 95% confidence, holding all other variables constant. It seems that the younger generation is more inclined to use the comma. We also find that household income is associated with comma usage. In particular, we expect the odds of a person with household income $150,000+ to use the Oxford comma to be between `r round(exp(-1.42529333), 3)` and `r round(exp(-0.1049652), 3)` times the odds of a person with income \$0 - \$24,999 to use the comma, with 95% confidence, holding all other variables constant.
+
+For the "Data" singular or plural debate, the final model is: 
+
+$$
+\begin{aligned}
+\log(\pi_{Use}/\pi_{Omit})_i = \beta_{0} +\beta_{1}(\text{Considered plural}_{i}) +\beta_{2}(\text{Debated Plural}_{i})+\beta_{3}(\text{Grammar is Important}_{i})\\ 
++\beta_{4}(\text{Gender}_{i}) +\beta_{5}(\text{Age}_{i}) +\beta_{6}(\text{Household Income}_{i})\\ +\beta_{7}(\text{Education}_{i}) +\beta_{8}(\text{Location}_{i})
+\end{aligned}
+$$
+ 
+where i refers to each survey respondent, $\beta_{0}$ refers to the baseline log-odds of using characterizing "data" as plural, and $\log(\pi_{Use}/\pi_{Omit})_i$ the log-odds of characterizing "data" as plural for respondent i. 
+ 
+```{r, include=FALSE, warning=FALSE, echo=FALSE}
+tidy(plural_final, conf.int=TRUE)%>%
+  kable(digits=3, caption = "Plural Model Output")
+```
+
+```{r, message = FALSE, warning=FALSE, echo=FALSE}
+tidy_plural_final <- tidy(plural_final)
+exp_model_coefs <- as_tibble(exp(tidy_plural_final$estimate))
+conf_int <- confint(plural_final)
+model_conf_int_2.5 <- as_tibble(exp(conf_int))[,1]
+model_conf_int_97.5 <- as_tibble(exp(conf_int))[,2]
+model_variables <- as_tibble(c(names(plural_final$coefficients)))
+model_pvals <- as.data.frame(coef(summary(plural_final))[,4])[,1]
+Variables <- c("Intercept", "Has considered plural (Yes)", "Care about debate (Not Much)", "Care about debate (Some)", "Care about debate (A lot)", "Grammar is important (somewhat important)", "Grammar is important (very important)", "Gender (male)", "Age (18-29)", "Age (30-44)", "Age (45-60)", "Household income ($100,000 - $149,999)", "Household income $150,000+)", "Household income ($25,000 - $49,999)", "Household income ($50,000 - $99,999)", 
+ "Education (High school degree)", "Education (Some college or Associate degree)", "Education (Bachelor degree)", "Education (Graduate degree)", "Location (East South Central)", "Location (Middle Atlantic)",
+ "Location (Mountain)", "Location (New England)", "Location (Pacific)", "Location (South Atlantic)",
+ "Location (West North Central)", "Location (West South Central)")
+model_output_full <- data.frame(Variables, 
+           exp_model_coefs, 
+           model_conf_int_2.5,
+           model_conf_int_97.5, 
+           model_pvals) %>%
+   mutate(model_pvals = if_else(model_pvals < 0.001, 0.000, model_pvals),
+         model_pvals = ceiling(model_pvals*1000)/1000,
+        model_pvals = as.character(model_pvals),
+        model_pvals = if_else(model_pvals == "0", "<0.001", model_pvals)) %>% 
+  kable(digits = 3, col.names = c("Variables", "Estimate", "95% CI Lower Bound", "95% CI Upper Bound", "P-Value (alpha = 0.05)"), caption = "Results of plural model")
+model_output_full
+```
+
+Among the variables of interest, we find a significant association between characterization of the word "data" as plural and whether an individual has actually ever spent time considering whether the word is plural or singular. We expect the odds of a person characterizing "data" as plural to be between `r round(exp(0.6474331), 3)` and `r round(exp(1.50708451), 3)` times higher for individuals who have thought about whether the word is plural or singular compared to individuals who have not, with 95% confidence, holding all other variables constant. We also find a significant association between plural usage and whether the individual cares about the debate over whether the word is singular or plural. We expect the odds of a person characterizing "data" as plural to be between `r round(exp(0.6029807), 3)` and `r round(exp(2.34359693), 3)` times lower for individuals who cares "Not at all" about this debate compared to individuals who care "a lot", with 95% confidence, holding all other variables constant. This is promising, as it means that people who care a lot about the debate tend to characterize the word correctly as a plural. Surprisingly, we do not find any notable association between education level and the correct use of the word as plural.
+
+Among the variables we controlled for, we saw that an individual's age had a significant association with use of the word "data" as plural. In particular, we expect the odds of a person between 18-27 using the word as plural to be between `r round(exp(-1.6222484), 3)` and `r round(exp(-0.41429506), 3)` times the odds of a person 60+ using the word as plural, with 95% confidence, holding all other variables constant. It seems that the younger generation is more inclined to characterize the word as singular.
+
+We do not find any significant associations between the use of the word as plural and the respondent's location (U.S. region) or household income.
+
+# Discussion
+
+## Investigative Conclusions
+
+Out of all survey questions related to the Oxford comma, this analysis finds that the only significant association between the use of the Oxford comma and one's opinions about the Oxford comma is in the question: "How much, if at all, do you care about the use (or lack thereof) of the serial (or Oxford) comma in grammar?" As expected, respondents who care a lot about the comma tend to use it compared to respondents who do not care a lot. Interestingly, whether or not the individual has heard about the comma and the degree of interest they have in grammar more broadly are not significantly associated with Oxford comma usage.
+
+Of survey questions related to the word "Data", this analysis finds that the amount an individual cares about the debate of data being plural as well as whether the individual has taken the time to think about the question in the past has significant association with correct plural usage. People who have considered the question in the past tend to use it correctly, as a plural, and people who are more invested in this debate tend to use it correctly as well. Once again, one's belief in the importance of grammar has no significant association with correct grammar usage in this context.
+
+With regards to education level as a proxy for exposure to correct grammar usage, we find that an individual's education level has no significant association with the usage of the Oxford comma or the word "data" as plural. For the Oxford comma, where the rules around its uses are blurry, and different institutions may preach different rules, this is understandable. For the plural usage of the word "data", where many official sources agree that the word is a plural noun, the origins of this widespread incorrect usage lack clear justification. One possible explanation for such prevalent usage could be that the singular version of the word, "datum", is very rarely used in speech. Another reason could be that some official sources, such as the AP Stylebook, typically allow the usage of the word as a singular noun when writing for general, nonscientific, audiences [7].
+
+Interestingly, the analysis found significant associations between grammar usage and the age of the respondent. Both the use of the Oxford comma and incorrect classification of the word "data" as singular are more prevalent among younger respondents (ages 18-29). In future analyses, it would be interesting then to ask the question: when did the current-day common grammar practices begin to take shape in American? This question could be answered using historical data on grammar usage and statistical methods in time series analysis, analyzing trends in grammar usage over time.
+
+## Summary
+
+This report analyzed the association between two commonly-debated grammar rules and one's opinions on grammar. Interestingly, we find that one's grammar usage does not necessarily associate with one's opinions on grammar. That is, there seems to be much passion for grammar on each side of both the Oxford comma and "data" debates. The author invites exploration on the usage of other commonly-debated grammar rules.
+
+## References:
+
+[1] https://news.bloomberglaw.com/us-law-week/is-the-oxford-comma-controversial-not-for-lawyers-video
+
+[2] https://www.nbcnews.com/news/us-news/think-commas-don-t-matter-omitting-one-cost-maine-dairy-n847151
+
+[3] https://fivethirtyeight.com/features/elitist-superfluous-or-popular-we-polled-americans-on-the-oxford-comma/
+
+[4] https://www.britannica.com/dictionary/eb/qa/Is-Data-Singular-or-Plural
+
+[5] https://digitalblog.ons.gov.uk/2016/12/08/data-is-versus-data-are
+
+[6] https://www.thesaurus.com/e/grammar/s/serial-comma/#do-you-call-it-the-serial-comma-or-the-oxford-comma
+
+[7] https://grammarist.com/usage/data/
+
+[8] https://fivethirtyeight.com/features/elitist-superfluous-or-popular-we-polled-americans-on-the-oxford-comma/
+
+
+## Appendix
+
+**Cook's distance**
+
+According to the Cook's Distance plot for the final model (Appendix A), there are no influential points (all of our points fall well below the threshold of 0.50 for Cook's Distance), so all points can be left in the final model.
+
+```{r include=FALSE}
+comma_model_aug <- augment(comma_final) %>%
+   mutate(obs_num = row_number()) #add row number to help with graphing
+```
+
+```{r Cooks-influential-comma, echo=FALSE, fig.height=2, fig.width=3.5, fig.cap="Cooke's distance plots", fig.align='center'}
+## scatterplot of Cook's D vs. observation number
+ggplot(data = comma_model_aug, aes(x = obs_num, y = .cooksd)) +
+  geom_point(alpha = 0.7) +
+  geom_hline(yintercept = c(0.5,1), color = "red", lty = 2) +
+  labs(x = "Observation Number", y = "Cook's D") +
+  geom_text(aes(label = ifelse(.hat > 0.5,
+                           as.character(obs_num), "")), nudge_x = 1)
+```
+
+```{r include=FALSE}
+plural_model_aug <- augment(plural_final) %>%
+   mutate(obs_num = row_number()) #add row number to help with graphing
+```
+
+```{r Cooks-influential-plural, fig.height=2, fig.width=3.5, fig.cap="Cooke's distance plots", fig.align='center', echo=FALSE}
+## scatterplot of Cook's D vs. observation number
+ggplot(data = plural_model_aug, aes(x = obs_num, y = .cooksd)) +
+  geom_point(alpha = 0.7) +
+  geom_hline(yintercept = c(0.5,1), color = "red", lty = 2) +
+  labs(x = "Observation Number", y = "Cook's D") +
+  geom_text(aes(label = ifelse(.hat > 0.5,
+                           as.character(obs_num), "")), nudge_x = 1)
+```
